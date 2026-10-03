@@ -388,6 +388,7 @@ Panel {
   onWifiDeviceChanged: {
     setScannerEnabled(true)
     syncWifiNetworks()
+    resetActiveApSignal()
   }
 
   onWifiNetworkObjectsChanged: syncWifiNetworks()
@@ -458,7 +459,35 @@ Panel {
   property int activeApSignal: -1
   readonly property bool needsActiveApSignal: kind === "wifi"
     && !(connectedWifiNetwork && connectedWifiNetwork.signalStrength > 0)
-  onKindChanged: if (kind !== "wifi") activeApSignal = -1
+  // Bumped whenever the cached reading stops describing the current link, so
+  // an nmcli read still in flight from before cannot write a stale strength.
+  property int activeApSignalGeneration: 0
+  property int activeApSignalRequest: -1
+  onKindChanged: if (kind !== "wifi") resetActiveApSignal()
+
+  // Switching Wi-Fi networks always passes through a non-"wifi" kind (both the
+  // device and the old network drop out of the connected state while the new
+  // profile activates), so this also covers a change of network.
+  function resetActiveApSignal() {
+    activeApSignal = -1
+    activeApSignalGeneration++
+  }
+
+  function pollActiveApSignal() {
+    if (activeApSignalProc.running) return
+    activeApSignalRequest = activeApSignalGeneration
+    activeApSignalProc.running = true
+  }
+
+  function finishActiveApSignal(raw) {
+    if (activeApSignalRequest !== activeApSignalGeneration) {
+      // The link changed mid-read and the restarted poll skipped while this
+      // one was running; read again now instead of a full interval later.
+      if (needsActiveApSignal) activeApSignalPoll.restart()
+      return
+    }
+    activeApSignal = Model.parseActiveApSignal(raw)
+  }
 
   function copyToClipboard(value) {
     if (!value || !root.bar) return
@@ -477,8 +506,11 @@ Panel {
   readonly property bool hasCaptivePortal: connectivity === "portal"
   readonly property bool restricted: hasCaptivePortal || connectivity === "limited"
   readonly property string icon: Model.connectionIcon(kind, signalStrength, connectivity)
+  // Keyed on the device rather than the SSID: on an OWE transition-mode
+  // network the listed network comes and goes with every scan while the link
+  // stays up, and a real network switch already passes through "disconnected".
   readonly property string connectionKey: kind === "wifi" && wifiDevice
-    ? kind + ":" + wifiDevice.name + ":" + (connectedWifiNetwork ? connectedWifiNetwork.name : "")
+    ? kind + ":" + wifiDevice.name
     : (kind === "ethernet" && wiredDevice ? kind + ":" + wiredDevice.name : "")
 
   onConnectionKeyChanged: Qt.callLater(checkConnectivity)
@@ -891,7 +923,7 @@ Panel {
     command: ["nmcli", "-t", "-f", "IN-USE,SIGNAL", "device", "wifi", "list", "ifname", root.wifiDevice ? root.wifiDevice.name : "", "--rescan", "no"]
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.activeApSignal = Model.parseActiveApSignal(text)
+      onStreamFinished: root.finishActiveApSignal(text)
     }
   }
 
@@ -901,7 +933,7 @@ Panel {
     repeat: true
     triggeredOnStart: true
     running: root.needsActiveApSignal
-    onTriggered: if (!activeApSignalProc.running) activeApSignalProc.running = true
+    onTriggered: root.pollActiveApSignal()
   }
 
   Timer {
