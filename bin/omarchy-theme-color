@@ -161,7 +161,7 @@ parse_colors_file() {
       continue
     fi
 
-    if [[ ! $value =~ ^[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#(),._+/%\ -]*$ ]]; then
+    if [[ ! $value =~ ^[abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#(),._+/%" "-]*$ ]]; then
       printf 'omarchy-theme-color: skipping %s: unsupported characters in value\n' "$key" >&2
       continue
     fi

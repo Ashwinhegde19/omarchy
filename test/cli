@@ -451,6 +451,13 @@ tokyo_bright_fg=$(awk -F'"' '/^bright_foreground =/ { print $2; exit }' "$ROOT/t
 [[ $tokyo_fg == "#a9b1d6" && $tokyo_light_fg == "#b4bee6" && $tokyo_bright_fg == "#c0caf5" ]] || fail "tokyo night foreground ramp stays ordered"
 pass "tokyo night foreground ramp stays ordered"
 
+printf 'accent = "#ff0000"\ncustom_ok = "plain"\ncustom_bad = "trailing\\"\n' >"$PI_TMPDIR/backslash-colors.toml"
+backslash_out=$("$ROOT/bin/omarchy-theme-color" --file "$PI_TMPDIR/backslash-colors.toml" --all 2>"$PI_TMPDIR/backslash.err")
+[[ $backslash_out == *$'custom_ok\tplain'* ]] || fail "theme color still resolves valid values alongside rejected ones"
+[[ $backslash_out != *custom_bad* ]] || fail "theme color rejects backslash values"
+grep -Fq 'unsupported characters' "$PI_TMPDIR/backslash.err" || fail "theme color announces rejected backslash values"
+pass "theme color rejects backslash values"
+
 if rg -q '^cursor\s*=' "$ROOT/themes" -g'colors.toml'; then
   fail "built-in colors.toml files omit cursor token"
 fi
